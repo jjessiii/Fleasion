@@ -751,7 +751,7 @@ def _find_ktx_dll() -> str | None:
     """Locate native libktx in frozen and development environments."""
     search_dirs = [Path(__file__).parent]
 
-    # Frozen app: trust only this process' PyInstaller extraction directory.
+    # Frozen app: trust only this process' payload extraction directory.
     if getattr(sys, 'frozen', False):
         meipass = getattr(sys, '_MEIPASS', None)
         if meipass:

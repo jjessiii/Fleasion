@@ -214,7 +214,7 @@ def _flatpak_probe_env(
     *,
     home: Path,
 ) -> dict[str, str]:
-    """Return a host-tool environment without PyInstaller's private libraries."""
+    """Return a host-tool environment without the frozen app's private libraries."""
     env = dict(environ)
     env['HOME'] = str(home)
     original_library_path = env.pop('LD_LIBRARY_PATH_ORIG', None)

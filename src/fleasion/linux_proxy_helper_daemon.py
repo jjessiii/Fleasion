@@ -68,7 +68,7 @@ POLKIT_PROMPTLESS_RULE_PATH = Path('/etc/polkit-1/rules.d/49-fleasion-proxy-help
 
 
 def _host_subprocess_env() -> dict[str, str]:
-    """Run host tools without PyInstaller's private shared-library path."""
+    """Run host tools without the frozen app's private shared-library path."""
     env = os.environ.copy()
     original_library_path = env.pop('LD_LIBRARY_PATH_ORIG', None)
     if original_library_path is not None:

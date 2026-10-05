@@ -226,8 +226,8 @@ def _source_helper_path() -> Path:
             HELPER_BUNDLED_EXECUTABLE_NAME,
         ]
         helper_names.extend(HELPER_BUNDLED_EXECUTABLE_NAMES.values())
-        # PyInstaller puts data files in Resources but native executables in
-        # Frameworks inside a macOS .app bundle.  Installing the bundled Python
+        # A macOS .app bundle keeps data files in Resources but native
+        # executables in Frameworks.  Installing the bundled Python
         # source as a fallback makes launchd depend on a system Python and can
         # fail before the helper has a chance to write its own log.
         bundle_roots = (frozen_root.parent / 'Frameworks', frozen_root)

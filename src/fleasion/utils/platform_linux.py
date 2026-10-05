@@ -138,7 +138,7 @@ def missing_linux_gui_packages(
                 capture_output=True,
                 text=True,
                 timeout=5,
-                # PyInstaller adds its Ubuntu-built shared libraries to
+                # Frozen Linux builds add their Ubuntu-built shared libraries to
                 # LD_LIBRARY_PATH.  pacman must instead load the Arch host
                 # libraries, or an ABI/load failure looks like a missing
                 # package to this check.
@@ -566,7 +566,7 @@ _DETACHED_POPEN_KWARGS = {
 
 
 def _host_subprocess_env() -> dict[str, str]:
-    """Run host desktop tools without PyInstaller's private library path."""
+    """Run host desktop tools without the frozen app's private library path."""
     env = os.environ.copy()
     original_library_path = env.pop('LD_LIBRARY_PATH_ORIG', None)
     if original_library_path is not None:

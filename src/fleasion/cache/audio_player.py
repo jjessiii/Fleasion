@@ -53,7 +53,7 @@ def _resolve_library_path(library_name: str, search_dirs=None) -> Path | None:
 
 
 def _bundled_portaudio_path() -> Path | None:
-    """Return PyInstaller's bundled PortAudio library, when available."""
+    """Return the frozen build's bundled PortAudio library, when available."""
     meipass = getattr(sys, '_MEIPASS', None)
     if not meipass:
         return None

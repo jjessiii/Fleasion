@@ -1,4 +1,4 @@
-"""Build and package the standalone macOS application."""
+"""Builds and packages macOS version"""
 
 from __future__ import annotations
 
@@ -32,13 +32,14 @@ X86_64_PYTHON_PLATFORM = 'x86_64-apple-darwin'
 _SLICE_BUILD_ENV = 'FLEASION_MACOS_SLICE_BUILD'
 _HELPER_NAME = 'fleasion-proxy-helper'
 _SUPPORTED_ARCHITECTURES = frozenset({'arm64', 'x86_64', 'universal2'})
-# These optional Cryptodome accelerators are only published for Intel Macs
-_ALLOWED_SINGLE_ARCH_MACHO = frozenset(
-    {
-        'Contents/Frameworks/Cryptodome/Hash/_ghash_clmul.abi3.so',
-        'Contents/Frameworks/Cryptodome/Cipher/_raw_aesni.abi3.so',
-    }
-)
+_ALLOWED_SINGLE_ARCH_MACHO = {
+    'Cryptodome/Hash/_ghash_clmul.so': 'x86_64',
+    'Cryptodome/Hash/_ghash_clmul.abi3.so': 'x86_64',
+    'Cryptodome/Cipher/_raw_aesni.so': 'x86_64',
+    'Cryptodome/Cipher/_raw_aesni.abi3.so': 'x86_64',
+    '_soundfile_data/libsndfile_arm64.dylib': 'arm64',
+    '_soundfile_data/libsndfile_x86_64.dylib': 'x86_64',
+}
 
 
 def subprocess_run(
@@ -146,7 +147,8 @@ class MacOSBuilder:
 
     @staticmethod
     def _payload_path(app_path: Path, relative_path: str) -> Path | None:
-        for directory in ('Resources', 'Frameworks'):
+        # Nuitka copies payloads into Contents/MacOS while legacy bundles used Resources
+        for directory in ('Resources', 'Frameworks', 'MacOS'):
             payload_path = app_path / 'Contents' / directory / relative_path
             if payload_path.exists():
                 return payload_path
@@ -168,7 +170,6 @@ class MacOSBuilder:
         info_plist = contents_path / 'Info.plist'
         macos_path = contents_path / 'MacOS'
         resources_path = contents_path / 'Resources'
-        frameworks_path = contents_path / 'Frameworks'
         executable_path = macos_path / self.executable_name
 
         required_directories = [
@@ -176,7 +177,6 @@ class MacOSBuilder:
             contents_path,
             macos_path,
             resources_path,
-            frameworks_path,
         ]
         missing_directories = [path for path in required_directories if not path.is_dir()]
         if missing_directories:
@@ -216,11 +216,23 @@ class MacOSBuilder:
                 f'{build_label} completed, but bundled payload was not found: '
                 '_soundfile_data/libsndfile_*.dylib'
             )
+        if not any(app_path.glob('Contents/**/libqcocoa.dylib')):
+            raise RuntimeError(
+                f'{build_label} completed, but the libqcocoa.dylib is missing.'
+            )
 
     @staticmethod
     def _is_allowed_single_arch_macho(app_path: Path, file_path: Path, archs: set[str]) -> bool:
         relative_path = file_path.relative_to(app_path).as_posix()
-        return relative_path in _ALLOWED_SINGLE_ARCH_MACHO and archs == {'x86_64'}
+        expected = next(
+            (
+                architecture
+                for suffix, architecture in _ALLOWED_SINGLE_ARCH_MACHO.items()
+                if relative_path.endswith(suffix)
+            ),
+            None,
+        )
+        return expected is not None and archs == {expected}
 
     def _verify_app_architectures(self, app_path: Path) -> None:
         """Ensure a universal bundle contains both architecture slices."""
@@ -439,39 +451,6 @@ class MacOSBuilder:
                 continue
             universal_file.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(x86_file, universal_file)
-
-        self._merge_soundfile_library(arm_app, x86_app, universal_app)
-
-    @staticmethod
-    def _merge_soundfile_library(arm_app: Path, x86_app: Path, universal_app: Path) -> None:
-        """Create the universal libsndfile payload expected by soundfile."""
-        relative_directory = Path('Contents/Frameworks/_soundfile_data')
-        arm_library = arm_app / relative_directory / 'libsndfile_arm64.dylib'
-        x86_library = x86_app / relative_directory / 'libsndfile_x86_64.dylib'
-        if not arm_library.is_file() or not x86_library.is_file():
-            return
-
-        universal_directory = universal_app / relative_directory
-        resource_directory = universal_app / 'Contents/Resources/_soundfile_data'
-        universal_directory.mkdir(parents=True, exist_ok=True)
-        resource_directory.mkdir(parents=True, exist_ok=True)
-        universal_library = universal_directory / 'libsndfile_universal.dylib'
-        subprocess_run(
-            [
-                'lipo',
-                '-create',
-                str(arm_library),
-                str(x86_library),
-                '-output',
-                str(universal_library),
-            ]
-        )
-        for architecture in ('arm64', 'x86_64'):
-            library_name = f'libsndfile_{architecture}.dylib'
-            shutil.copy2(universal_library, universal_directory / library_name)
-            resource_library = resource_directory / library_name
-            resource_library.unlink(missing_ok=True)
-            resource_library.symlink_to(Path('../../Frameworks/_soundfile_data') / library_name)
 
     def _verify_zip_package(self) -> None:
         """Extract and validate the finished release archive."""

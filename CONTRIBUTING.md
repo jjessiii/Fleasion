@@ -70,14 +70,13 @@ uv version --bump beta
 uv version --bump stable
 ```
 
-Source runs, packaged distribution metadata, and stable GitHub releases use the canonical version. PyInstaller and GitHub Actions derive only the artifact filename label when building a prerelease.
+Source runs, packaged distribution metadata, and stable GitHub releases use the canonical version. Nuitka and GitHub Actions derive only the artifact filename label when building a prerelease.
 
 The draft-release workflow accepts stable and prerelease project versions. Prereleases keep a clean version tag such as `v2.5.0b1`, publish artifacts containing their Git commit label, and are marked as GitHub prereleases. Stable installations check GitHub's latest stable release; prerelease installations follow newer published prereleases and automatically return to the stable channel after installing the final release. Draft releases are never offered by the updater.
 
 ## Project Structure
 
 ```text
-├── Fleasion.spec   # PyInstaller specification for the standalone build
 ├── launcher.py     # Thin launcher used to start the packaged app
 ├── pyproject.toml  # Project metadata and dependency configuration
 ├── README.md       # User-facing project overview and usage guide
@@ -98,7 +97,8 @@ The draft-release workflow accepts stable and prerelease project versions. Prere
 │       ├── scripts/                      # Build orchestration
 │       └── utils/                        # Shared platform and application utilities
 ├── tests/                                # Automated test suite
-└── build/                                # Generated PyInstaller output (not source)
+└── build/                                # Generated Nuitka build output
+
 ```
 
 The repository changes frequently; use the source tree itself as the authoritative reference for individual modules.

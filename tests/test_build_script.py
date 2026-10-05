@@ -9,56 +9,14 @@ from pytest import MonkeyPatch
 from fleasion.scripts import build, macos_build
 
 
-def test_windows_packaging_uses_no_custom_python_runtime_hook() -> None:
-    spec_path = Path(__file__).resolve().parents[1] / 'Fleasion.spec'
-    spec_source = spec_path.read_text(encoding='utf-8')
+def test_workflow_verifies_nuitka_payload() -> None:
+    workflow_source = (
+        Path(__file__).resolve().parents[1] / '.github/workflows/build.yml'
+    ).read_text(encoding='utf-8')
 
-    assert 'runtime_hooks=[]' in spec_source
-    assert 'rthook_harden_dll_search' not in spec_source
-
-
-def test_packaging_collects_numpy_extensions_without_upx() -> None:
-    spec_path = Path(__file__).resolve().parents[1] / 'Fleasion.spec'
-    spec_source = spec_path.read_text(encoding='utf-8')
-
-    assert "_collect_package('numpy')" in spec_source
-    assert "'numpy/*/*.pyd'" in spec_source
-    assert "'numpy.libs/*.dll'" in spec_source
-
-
-def test_windows_packaging_uses_upx_but_excludes_graphics_runtime() -> None:
-    root = Path(__file__).resolve().parents[1]
-    spec_source = (root / 'Fleasion.spec').read_text(encoding='utf-8')
-    workflow_source = (root / '.github/workflows/build.yml').read_text(encoding='utf-8')
-
-    assert "_use_upx = sys.platform == 'win32'" in spec_source
-    assert 'Install UPX' in workflow_source
-    for required_exclusion in (
-        "'Qt6Gui.dll'",
-        "'Qt6Widgets.dll'",
-        "'Qt6OpenGL.dll'",
-        "'PyQt6/*.pyd'",
-        "'qwindows.dll'",
-        "'opengl32sw.dll'",
-    ):
-        assert required_exclusion in spec_source
-
-
-def test_windows_archive_check_recurses_into_pyz_and_tracks_qopenglwindow() -> None:
-    root = Path(__file__).resolve().parents[1]
-    spec_source = (root / 'Fleasion.spec').read_text(encoding='utf-8')
-    workflow_source = (root / '.github/workflows/build.yml').read_text(encoding='utf-8')
-
-    assert 'pyi-archive_viewer -r -b -l' in workflow_source
-    assert "'PyQt6.QtOpenGL'," in spec_source
-    assert "'PyQt6.QtOpenGLWidgets'," not in spec_source
-
-
-def test_packaging_collects_lz4_native_extensions() -> None:
-    spec_path = Path(__file__).resolve().parents[1] / 'Fleasion.spec'
-    spec_source = spec_path.read_text(encoding='utf-8')
-
-    assert "_collect_package('lz4')" in spec_source
+    assert 'pyi-archive_viewer' not in workflow_source
+    assert 'build/nuitka/launcher.dist' in workflow_source
+    assert 'module.fleasion.cache.obj_viewer.c' in workflow_source
 
 
 def _set_reproducible_environment(monkeypatch: MonkeyPatch) -> None:
@@ -81,19 +39,105 @@ def test_build_dispatches_to_macos_release_builder(monkeypatch: MonkeyPatch) -> 
     assert calls == [None]
 
 
-def test_macos_slice_build_runs_pyinstaller_without_redispatch(monkeypatch: MonkeyPatch) -> None:
+def test_macos_slice_build_runs_nuitka_without_redispatch(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
     _set_reproducible_environment(monkeypatch)
     monkeypatch.setattr(build.sys, 'platform', 'darwin')
     monkeypatch.setenv(build.MACOS_SLICE_BUILD_ENV, '1')
-    calls: list[tuple[list[str] | None, bool]] = []
+    monkeypatch.delenv('MACOS_TARGET_ARCH', raising=False)
+    monkeypatch.setattr(build, 'NUITKA_OUTPUT_DIR', tmp_path / 'nuitka')
+    monkeypatch.setattr(build, 'DIST_DIR', tmp_path / 'dist')
+    monkeypatch.setattr(build, '_require_matching_distribution', lambda: None)
+    helper_calls: list[tuple[str, str]] = []
+    nuitka_calls: list[tuple[list[str], bool]] = []
+    publish_calls: list[tuple[Path, Path]] = []
 
-    def run_pyinstaller(arguments: list[str] | None, *, skip_setup_logging: bool) -> None:
-        calls.append((arguments, skip_setup_logging))
+    def build_helper(source: str, output_name: str) -> None:
+        helper_calls.append((source, output_name))
 
-    monkeypatch.setattr(build, 'run_pyinstaller', run_pyinstaller)
+    def run_nuitka(arguments: list[str], *, skip_setup_logging: bool) -> None:
+        nuitka_calls.append((arguments, skip_setup_logging))
+
+    def publish(source: Path, destination: Path) -> None:
+        publish_calls.append((source, destination))
+
+    monkeypatch.setattr(build, '_build_helper', build_helper)
+    monkeypatch.setattr(build, 'run_nuitka', run_nuitka)
+    monkeypatch.setattr(build, '_publish', publish)
 
     assert build.main(['--clean']) == 0
-    assert calls == [(['--clean', '--noconfirm', 'Fleasion.spec'], True)]
+
+    assert helper_calls == [('src/fleasion/macos_proxy_helper_daemon.py', 'fleasion-proxy-helper')]
+    assert len(nuitka_calls) == 1
+    arguments, skip_setup_logging = nuitka_calls[0]
+    assert skip_setup_logging
+    assert arguments[-1] == 'launcher.py'
+    assert '--mode=app' in arguments
+    assert '--clean-cache=all' in arguments
+    assert '--output-folder-name=Fleasion' in arguments
+    assert '--macos-app-mode=ui-element' in arguments
+    assert '--disable-plugins=options-nanny' in arguments
+    assert '--macos-target-arch=' not in ' '.join(arguments)
+    assert publish_calls == [
+        (tmp_path / 'nuitka' / 'Fleasion.app', tmp_path / 'dist' / 'Fleasion.app')
+    ]
+
+
+def test_windows_nuitka_arguments_match_packaging_contract(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(build.sys, 'platform', 'win32')
+
+    arguments = build._nuitka_arguments(clean=False)
+
+    assert arguments[-1] == 'launcher.py'
+    assert '--mode=onefile' in arguments
+    assert '--windows-console-mode=disable' in arguments
+    assert '--windows-icon-from-ico=src/fleasion/fleasionlogoHR.ico' in arguments
+    assert '--include-data-files=src/fleasion/cache/tools/ktx_to_png/ktx.dll=ktx.dll' in arguments
+    assert any(argument.endswith('=opengl32sw.dll') for argument in arguments)
+    assert '--include-distribution-metadata=fleasion' in arguments
+    assert '--enable-plugin=pyqt6' in arguments
+    assert '--noinclude-dlls=*qtiff.dll' in arguments
+    assert '--include-data-dir=src/fleasion/cache/tools/animpreview=tools/animpreview' in (
+        arguments
+    )
+    for module in ('win32crypt', 'PyQt6.QtWidgets', 'PyQt6.QtOpenGL', 'DracoPy'):
+        assert f'--include-module={module}' in arguments
+    for package in ('numpy', 'lz4'):
+        assert f'--include-package={package}' in arguments
+    assert '--nofollow-import-to=numpy.f2py' in arguments
+    assert '--nofollow-import-to=numpy.typing.tests' in arguments
+    assert '--nofollow-import-to=pytest' in arguments
+    for argument in arguments:
+        if argument.startswith('--include-package='):
+            assert build.find_spec(argument.partition('=')[2]) is not None
+    assert '--disable-plugins=options-nanny' not in arguments
+    assert '--clean-cache=all' not in arguments
+
+
+def test_linux_nuitka_arguments_keep_host_audio(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(build.sys, 'platform', 'linux')
+
+    arguments = build._nuitka_arguments(clean=True)
+
+    assert arguments[-1] == 'launcher.py'
+    assert '--mode=onefile' in arguments
+    assert '--clean-cache=all' in arguments
+    assert (
+        '--include-data-files=dist/fleasion-linux-proxy-helper=fleasion-linux-proxy-helper'
+        in arguments
+    )
+    assert (
+        '--include-data-files=src/fleasion/linux_proxy_helper_daemon.py='
+        'linux_proxy_helper_daemon.py' in arguments
+    )
+    assert '--noinclude-dlls=*libportaudio.so*' not in arguments
+    assert '--noinclude-dlls=libportaudio.so*' in arguments
+    for package in ('_sounddevice_data', '_soundfile_data'):
+        included = f'--include-package={package}' in arguments
+        assert included == (build.find_spec(package) is not None)
+    assert '--disable-plugins=options-nanny' not in arguments
+    assert not any('--macos-' in argument or '--windows-' in argument for argument in arguments)
 
 
 def test_macos_versions_are_normalized_for_comparison() -> None:
@@ -169,6 +213,35 @@ def test_universal_verification_ignores_helper_symlink_targets(
     monkeypatch.setattr(builder, '_regular_files', lambda _app_path: framework_helpers)
 
     builder._verify_app_architectures(tmp_path)
+
+
+def test_single_arch_allowlist_requires_the_expected_architecture(tmp_path: Path) -> None:
+    builder = object.__new__(macos_build.MacOSBuilder)
+    allowed = (
+        ('Contents/MacOS/Cryptodome/Cipher/_raw_aesni.so', {'x86_64'}),
+        ('Contents/MacOS/Cryptodome/Cipher/_raw_aesni.abi3.so', {'x86_64'}),
+        ('Contents/MacOS/Cryptodome/Hash/_ghash_clmul.so', {'x86_64'}),
+        ('Contents/MacOS/_soundfile_data/libsndfile_arm64.dylib', {'arm64'}),
+        ('Contents/MacOS/_soundfile_data/libsndfile_x86_64.dylib', {'x86_64'}),
+    )
+    for relative_path, archs in allowed:
+        file_path = tmp_path / relative_path
+        matched = builder._is_allowed_single_arch_macho(  # ruff: ignore[private-member-access]
+            tmp_path, file_path, archs
+        )
+        assert matched
+
+    rejected = (
+        ('Contents/MacOS/Cryptodome/Cipher/_raw_aesni.so', {'arm64'}),
+        ('Contents/MacOS/_soundfile_data/libsndfile_arm64.dylib', {'x86_64'}),
+        ('Contents/MacOS/fleasion/thing.so', {'x86_64'}),
+    )
+    for relative_path, archs in rejected:
+        file_path = tmp_path / relative_path
+        matched = builder._is_allowed_single_arch_macho(  # ruff: ignore[private-member-access]
+            tmp_path, file_path, archs
+        )
+        assert not matched
 
 
 def test_arm_build_resolves_for_the_deployment_platform(monkeypatch: MonkeyPatch) -> None:

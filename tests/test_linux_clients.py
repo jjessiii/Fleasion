@@ -1,4 +1,5 @@
 import subprocess
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from fleasion.utils.linux_clients import (
     query_default_roblox_handlers,
     select_linux_client,
 )
+
+pytestmark = pytest.mark.skipif(sys.platform == 'win32', reason='Should not run on Windows')
 
 
 def _installation(client, tmp_path: Path) -> LinuxClientInstallation:
@@ -82,7 +85,7 @@ def test_detect_installed_clients_uses_flatpak_info(tmp_path):
     ]
 
 
-def test_detect_installed_clients_strips_pyinstaller_library_path(tmp_path, monkeypatch):
+def test_detect_installed_clients_strips_frozen_library_path(tmp_path, monkeypatch):
     bundle_root = tmp_path / '_MEI12345'
     host_libs = tmp_path / 'host-libs'
     calls = []

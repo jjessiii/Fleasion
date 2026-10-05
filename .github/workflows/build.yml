@@ -1,4 +1,4 @@
-name: Build PyInstaller Packages
+name: Build Nuitka Packages
 
 on:
   workflow_call:
@@ -101,35 +101,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libportaudio2 libpipewire-0.3-0 libspa-0.2-modules libpulse0
 
-      - name: Install UPX
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $maxRetries = 5
-          $maxAttempts = $maxRetries + 1
-          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-            Write-Host "Installing UPX (attempt $attempt/$maxAttempts)..."
-            choco install upx -y --no-progress
-            $installExitCode = $LASTEXITCODE
-
-            if ($installExitCode -eq 0) {
-              if (Get-Command upx -ErrorAction SilentlyContinue) {
-                upx --version
-                if ($LASTEXITCODE -eq 0) {
-                  break
-                }
-              }
-            }
-
-            if ($attempt -eq $maxAttempts) {
-              throw "UPX installation failed after $maxAttempts attempts."
-            }
-
-            $delaySeconds = [int][Math]::Min(60, [Math]::Pow(2, $attempt) * 5)
-            Write-Host "Retrying UPX installation in $delaySeconds seconds..."
-            Start-Sleep -Seconds $delaySeconds
-          }
-
       - name: Test Windows Qt startup path
         if: runner.os == 'Windows'
         env:
@@ -156,7 +127,7 @@ jobs:
       - name: Build package
         run: uv run build
 
-      - name: Verify Windows lazy OpenGL payload
+      - name: Verify Windows payload
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -164,15 +135,25 @@ jobs:
           if (-not $exe) {
             throw 'Could not find the Windows executable in dist/.'
           }
-          $listing = uv run pyi-archive_viewer -r -b -l $exe.FullName | Out-String
+          $payload = 'build/nuitka/launcher.dist'
+          if (-not (Test-Path $payload)) {
+            throw 'Nuitka payload folder build/nuitka/launcher.dist is missing.'
+          }
           foreach ($required in @(
-            'fleasion.cache.obj_viewer',
-            'fleasion.cache.animation_viewer',
-            'QtOpenGL',
-            'opengl32sw.dll'
+            'opengl32sw.dll',
+            'PyQt6\QtOpenGL.pyd',
+            'PyQt6\Qt6\plugins\platforms\qwindows.dll'
           )) {
-            if ($listing -notmatch [regex]::Escape($required)) {
-              throw "Windows package is missing required lazy OpenGL payload: $required"
+            if (-not (Test-Path (Join-Path $payload $required))) {
+              throw "Windows package is missing required payload file: $required"
+            }
+          }
+          foreach ($module in @(
+            'module.fleasion.cache.obj_viewer.c',
+            'module.fleasion.cache.animation_viewer.c'
+          )) {
+            if (-not (Test-Path (Join-Path 'build/nuitka/launcher.build' $module))) {
+              throw "Windows package is missing required lazy viewer module: $module"
             }
           }
 
@@ -191,9 +172,14 @@ jobs:
       - name: Verify Linux audio runtime
         if: runner.os == 'Linux'
         run: |
-          archive_listing="$(uv run pyi-archive_viewer -b -l dist/Fleasion-v*-Linux)"
-          printf '%s\n' "$archive_listing" | grep -Ei 'portaudio|pulse|pipewire|jack|alsa|sound' || true
-          if [[ "$archive_listing" =~ lib(portaudio|asound|jack|pulse|pulsecommon-|pipewire-) ]]; then
+          payload='build/nuitka/launcher.dist'
+          if [ ! -d "$payload" ]; then
+            echo "Nuitka payload folder $payload is missing." >&2
+            exit 1
+          fi
+          audio_files="$(find "$payload" \( -name 'libportaudio*' -o -name 'libasound*' -o -name 'libjack*' -o -name 'libpulse*' -o -name 'libpipewire*' \) -print)"
+          printf '%s\n' "$audio_files"
+          if [ -n "$audio_files" ]; then
             echo "Linux package must use host audio backend libraries, not the GitHub runner copies." >&2
             exit 1
           fi
@@ -201,8 +187,7 @@ jobs:
       - name: Verify Linux compiled Python dependencies
         if: runner.os == 'Linux'
         run: |
-          archive_listing="$(uv run pyi-archive_viewer -b -l dist/Fleasion-v*-Linux)"
-          if ! grep -q 'DracoPy' <<< "$archive_listing"; then
+          if ! find build/nuitka/launcher.dist -name 'DracoPy*' -print -quit | grep -q .; then
             echo "Linux package is missing the bundled DracoPy extension." >&2
             exit 1
           fi

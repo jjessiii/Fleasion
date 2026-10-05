@@ -1781,7 +1781,7 @@ def test_verified_restart_uses_protocol_args_without_kill_others(monkeypatch, tm
     )
     monkeypatch.setattr(app_module.sys, 'executable', '/tmp/Fleasion')
     monkeypatch.setattr(app_module.os, 'getpid', lambda: 3131)
-    monkeypatch.setenv('PYINSTALLER_RESET_ENVIRONMENT', 'stale-parent-value')
+    monkeypatch.setenv('FLEASION_RESET_ENVIRONMENT', 'stale-parent-value')
 
     assert app_module.restart_fleasion_normally(verify_startup=True)
     assert launches[0][0] == [
@@ -1791,8 +1791,8 @@ def test_verified_restart_uses_protocol_args_without_kill_others(monkeypatch, tm
         '--restart-handoff-parent-pid',
         '3131',
     ]
-    assert launches[0][1]['env']['PYINSTALLER_RESET_ENVIRONMENT'] == '1'
-    assert app_module.os.environ['PYINSTALLER_RESET_ENVIRONMENT'] == 'stale-parent-value'
+    assert launches[0][1]['env']['FLEASION_RESET_ENVIRONMENT'] == '1'
+    assert app_module.os.environ['FLEASION_RESET_ENVIRONMENT'] == 'stale-parent-value'
     assert handoffs == [(token, 6262)]
 
 

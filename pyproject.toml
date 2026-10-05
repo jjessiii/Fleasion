@@ -47,7 +47,7 @@ build = 'fleasion.scripts.build:main'
 
 [dependency-groups]
 dev = [
-    "pyinstaller>=6.19.0",
+    "nuitka>=4.2.2",
     "pyright>=1.1.411",
     "pytest>=9.0.0",
     "ruff>=0.16.5",
@@ -82,6 +82,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101"]  # pytest uses plain assert
+"launcher.py" = ["SLF001"]  # The frozen shim assigns sys._MEIPASS
 
 [tool.ruff.format]
 quote-style = "single"

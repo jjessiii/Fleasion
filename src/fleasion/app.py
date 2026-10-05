@@ -1256,7 +1256,7 @@ def _relaunch_as_admin(
     shell32.ShellExecuteExW.argtypes = [ctypes.POINTER(_SHELLEXECUTEINFOW)]
     shell32.ShellExecuteExW.restype = ctypes.wintypes.BOOL
 
-    reset_env_key = 'PYINSTALLER_RESET_ENVIRONMENT'
+    reset_env_key = 'FLEASION_RESET_ENVIRONMENT'
     old_reset_env = os.environ.get(reset_env_key)
     if frozen:
         os.environ[reset_env_key] = '1'
@@ -1627,7 +1627,7 @@ def _wait_for_restart_marker(
     """Wait for a token-authenticated protocol marker and return its app PID/value.
 
     The process created by Popen/ShellExecute is only a launcher-liveness signal.
-    PyInstaller one-file builds use a bootloader parent whose PID differs from
+    One-file frozen builds use a bootstrap parent whose PID differs from
     the Python application child, so launcher PID is deliberately not protocol
     identity. The random token identifies this handoff; ``prepared`` reports
     the actual application PID, and later phases can require that same value.
@@ -1788,7 +1788,7 @@ def _abort_restart_child_and_wait(
 ) -> bool:
     """Abort a failed replacement and prove the Python application is gone.
 
-    The outer launcher may be a PyInstaller one-file bootloader, so launcher
+    The outer launcher may be a one-file bootstrap process, so launcher
     termination alone is never treated as proof that the application child
     exited. Once ``prepared`` reports an application PID, rollback is allowed
     only after that PID is no longer alive.
@@ -1832,8 +1832,8 @@ def _run_restart_handoff_parent(
 ) -> bool:
     """Parent-side prepared -> release -> ready restart state machine.
 
-    ``launcher_pid`` is diagnostic only. PyInstaller one-file creates a
-    bootloader parent plus a Python application child, so protocol identity is
+    ``launcher_pid`` is diagnostic only. One-file frozen builds create a
+    bootstrap parent plus a Python application child, so protocol identity is
     the random token and ``prepared`` supplies the actual application PID.
     """
     del launcher_pid
@@ -1999,12 +1999,12 @@ def restart_fleasion_normally(
 
     if getattr(sys, 'frozen', False):
         launch = [sys.executable, *existing_args]
-        # PyInstaller one-file children must start a fresh extraction/runtime
-        # environment. Reusing the current bootloader environment can make an
+        # One-file frozen children must start a fresh extraction/runtime
+        # environment. Reusing the current bootstrap environment can make an
         # independent relaunch import from the old temporary directory and die
         # with missing stdlib/native modules after the parent exits.
         child_env = os.environ.copy()
-        child_env['PYINSTALLER_RESET_ENVIRONMENT'] = '1'
+        child_env['FLEASION_RESET_ENVIRONMENT'] = '1'
         popen_kwargs['env'] = child_env
         if sys.platform != 'win32':
             popen_kwargs['start_new_session'] = True

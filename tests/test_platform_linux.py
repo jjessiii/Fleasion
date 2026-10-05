@@ -381,7 +381,7 @@ def test_launch_as_standard_user_runs_sober_flatpak_for_roblox_uri(monkeypatch):
     ]
 
 
-def test_launch_as_standard_user_strips_pyinstaller_env_for_sober_uri(monkeypatch, tmp_path):
+def test_launch_as_standard_user_strips_frozen_env_for_sober_uri(monkeypatch, tmp_path):
     calls = []
     bundle_root = tmp_path / '_MEI12345'
     host_libs = tmp_path / 'host-libs'
